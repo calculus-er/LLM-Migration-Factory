@@ -1,0 +1,54 @@
+"""
+Target Runner — Executes translated prompts against NVIDIA Llama via the NIM API.
+Uses the OpenAI-compatible endpoint that NVIDIA NIM provides.
+"""
+import os
+import time
+from openai import OpenAI
+
+
+def run_on_target(system_prompt: str, user_prompt: str) -> dict:
+    """
+    Sends the translated system/user prompts to the NVIDIA Llama target model.
+    
+    Returns:
+        dict with keys: response_text, latency_ms, prompt_tokens, completion_tokens
+    """
+    api_key = os.environ.get("NVIDIA_API_KEY", "")
+    base_url = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
+
+    # NVIDIA NIM exposes an OpenAI-compatible chat completions endpoint
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+    )
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": user_prompt})
+
+    start = time.time()
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1024,
+        )
+    except Exception as e:
+        return {
+            "response_text": f"[TARGET ERROR] {str(e)}",
+            "latency_ms": (time.time() - start) * 1000,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+        }
+    end = time.time()
+
+    return {
+        "response_text": response.choices[0].message.content or "",
+        "latency_ms": (end - start) * 1000,
+        "prompt_tokens": getattr(response.usage, "prompt_tokens", 0),
+        "completion_tokens": getattr(response.usage, "completion_tokens", 0),
+    }

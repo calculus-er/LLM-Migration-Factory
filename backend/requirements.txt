@@ -4,4 +4,3 @@ python-dotenv
 openai
 groq
 google-generativeai
-openai-types
