@@ -1,14 +1,16 @@
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 import asyncio
 import uuid
+import threading
 
 from models import JobPhase, CallSite
 from job_store import job_store
 from parser.ast_parser import parse_openai_calls
+from pipeline.orchestrator import run_pipeline
 
 load_dotenv()
 
@@ -37,22 +39,21 @@ def health_check():
 @app.post("/api/upload")
 async def upload_script(file: UploadFile = File(...)):
     """
-    Accept a Python script, parse it for OpenAI calls, create a job,
-    and return the job ID + parsed call sites.
+    Accept a Python script and kick off the full migration pipeline
+    in a background thread. Returns job_id immediately.
     """
     content = await file.read()
     script_content = content.decode("utf-8")
+    filename = file.filename or "unknown.py"
 
     # Generate unique job ID
     job_id = f"job-{uuid.uuid4().hex[:8]}"
 
     # Create job in store
-    job = job_store.create_job(job_id, file.filename or "unknown.py")
+    job_store.create_job(job_id, filename)
+    job_store.add_log(job_id, f"Received file: {filename}")
 
-    # Phase 1: Parse the file
-    job_store.set_phase(job_id, JobPhase.PARSING)
-    job_store.add_log(job_id, f"Received file: {file.filename}")
-
+    # Quick parse to validate the file has OpenAI calls before starting pipeline
     try:
         raw_calls = parse_openai_calls(script_content)
     except SyntaxError as e:
@@ -66,32 +67,19 @@ async def upload_script(file: UploadFile = File(...)):
             content={"job_id": job_id, "call_sites": [], "message": "No OpenAI calls detected."},
         )
 
-    # Convert to Pydantic models
-    call_sites = []
-    for c in raw_calls:
-        site = CallSite(
-            lineno=c.lineno,
-            model=c.args.get("model"),
-            temperature=c.args.get("temperature"),
-            max_tokens=c.args.get("max_tokens"),
-            messages=c.args.get("messages", []),
-            raw_snippet=c.raw_snippet,
-        )
-        call_sites.append(site)
-        job_store.add_log(job_id, f"Found call site at line {c.lineno}: model={c.args.get('model')}")
-
-    job_store.add_log(job_id, f"Parsing complete. {len(call_sites)} call site(s) found.", level="success")
-
-    # Store script content on the job for later phases
-    # (We attach it as extra data since JobStatus doesn't have a field for it)
-    job._script_content = script_content
-    job._call_sites = call_sites
+    # Launch the full pipeline in a background thread
+    thread = threading.Thread(
+        target=run_pipeline,
+        args=(job_id, script_content, filename),
+        daemon=True,
+    )
+    thread.start()
 
     return {
         "job_id": job_id,
-        "filename": file.filename,
-        "call_sites": [s.model_dump() for s in call_sites],
-        "status": "parsed",
+        "filename": filename,
+        "call_sites_found": len(raw_calls),
+        "status": "pipeline_started",
     }
 
 
@@ -102,6 +90,33 @@ def get_job_status(job_id: str):
     if not job:
         return JSONResponse(status_code=404, content={"error": "Job not found"})
     return job.model_dump()
+
+
+@app.get("/api/jobs/{job_id}/report")
+def get_job_report(job_id: str):
+    """Get the final migration report for a completed job."""
+    job = job_store.get_job(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+    if not job.report:
+        return JSONResponse(status_code=202, content={"message": "Report not ready yet", "phase": job.phase.value})
+    return job.report.model_dump()
+
+
+@app.get("/api/jobs/{job_id}/download")
+def download_refactored(job_id: str):
+    """Download the refactored Python source file."""
+    job = job_store.get_job(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+    if not job.report or not job.report.refactored_code:
+        return JSONResponse(status_code=202, content={"message": "Refactored code not ready yet"})
+
+    return PlainTextResponse(
+        content=job.report.refactored_code,
+        media_type="text/x-python",
+        headers={"Content-Disposition": f'attachment; filename="refactored_{job.filename}"'},
+    )
 
 
 @app.websocket("/ws/{job_id}")
@@ -134,7 +149,6 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                 if event.get("type") == "report_ready":
                     break
             except asyncio.TimeoutError:
-                # Send heartbeat to keep connection alive
                 await websocket.send_json({"type": "heartbeat"})
     except WebSocketDisconnect:
         pass
