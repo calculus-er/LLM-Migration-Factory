@@ -52,7 +52,7 @@ mock_optimization = [
 ]
 refactored = refactor_code(mock_script, mock_optimization)
 
-if "NVIDIA NIM API Client" in refactored and "Optimized for NVIDIA Llama" in refactored:
+if "LLM Factory" in refactored and "Optimized Prompt" in refactored:
     print("Code Surgeon successfully refactored the source code!")
 else:
     print("FAILED code surgeon test.")

@@ -3,8 +3,9 @@ Evaluator — Uses Google Gemini as an LLM-as-a-Judge to compare
 the target model's response against the golden ground truth.
 Returns a score (0-100) and detailed feedback.
 """
-import os
+import time
 import google.generativeai as genai
+from config import config
 
 
 JUDGE_PROMPT_TEMPLATE = """You are an expert AI output evaluator. Your job is to compare an ORIGINAL response from a production AI system with a NEW response from a different model, and judge how faithfully the NEW response reproduces the ORIGINAL.
@@ -44,14 +45,20 @@ def evaluate_response(
     user_prompt: str,
 ) -> dict:
     """
-    Uses Gemini to judge how well the target response matches the golden truth.
-    
-    Returns:
-        dict with keys: score (int), feedback (str), passed (bool)
+    Uses the Judge model to compare responses.
     """
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
-    threshold = int(os.environ.get("OPTIMIZATION_THRESHOLD", "90"))
+    if config.USE_MOCK_APIS:
+        time.sleep(1.5) # simulate reasoning
+        # Return a passing score to progress the loop smoothly in mock demos
+        return {
+            "score": 96,
+            "feedback": "[Mock Judge] The response perfectly aligns with the required semantic meaning and preserves all vital constraints.",
+            "passed": True
+        }
+
+    api_key = config.JUDGE_API_KEY
+    model_name = config.JUDGE_MODEL
+    threshold = config.OPTIMIZATION_THRESHOLD
 
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(model_name)
@@ -73,7 +80,6 @@ def evaluate_response(
             "passed": False,
         }
 
-    # Parse the structured response
     score = 0
     feedback = raw_text
 
@@ -82,7 +88,6 @@ def evaluate_response(
         if line_stripped.upper().startswith("SCORE:"):
             try:
                 score_str = line_stripped.split(":", 1)[1].strip()
-                # Handle cases like "85/100" or just "85"
                 score = int(score_str.split("/")[0].strip())
             except (ValueError, IndexError):
                 score = 0

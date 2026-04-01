@@ -1,27 +1,29 @@
 """
-Target Runner — Executes translated prompts against NVIDIA Llama via the NIM API.
-Uses the OpenAI-compatible endpoint that NVIDIA NIM provides.
+Target Runner — Executes translated prompts against the Target Model
+(e.g., NVIDIA Llama, Groq, Together AI).
 """
-import os
 import time
 from openai import OpenAI
+from config import config
 
 
 def run_on_target(system_prompt: str, user_prompt: str) -> dict:
     """
-    Sends the translated system/user prompts to the NVIDIA Llama target model.
-    
-    Returns:
-        dict with keys: response_text, latency_ms, prompt_tokens, completion_tokens
+    Sends the translated system/user prompts to the specified Target model.
     """
-    api_key = os.environ.get("NVIDIA_API_KEY", "")
-    base_url = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-    model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
+    if config.USE_MOCK_APIS:
+        time.sleep(1.0) # simulate network latency
+        return {
+            "response_text": f"[Mock Mode] Successfully ran highly optimized {config.TARGET_MODEL} model response based on your newly structured constraints.",
+            "latency_ms": 1000.0,
+            "prompt_tokens": 58,
+            "completion_tokens": 40,
+        }
 
-    # NVIDIA NIM exposes an OpenAI-compatible chat completions endpoint
+    # Use the OpenAI client but point it to the generic TARGET base URL
     client = OpenAI(
-        api_key=api_key,
-        base_url=base_url,
+        api_key=config.TARGET_API_KEY,
+        base_url=config.TARGET_BASE_URL,
     )
 
     messages = []
@@ -32,7 +34,7 @@ def run_on_target(system_prompt: str, user_prompt: str) -> dict:
     start = time.time()
     try:
         response = client.chat.completions.create(
-            model=model,
+            model=config.TARGET_MODEL,
             messages=messages,
             temperature=0.7,
             max_tokens=1024,

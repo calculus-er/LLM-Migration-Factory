@@ -3,8 +3,9 @@ Prompt Translator — Uses Groq Llama to rewrite OpenAI-format prompts
 into optimized prompts for the NVIDIA Llama target model.
 Accepts optional judge feedback to iteratively improve the translation.
 """
-import os
+import time
 from groq import Groq
+from config import config
 
 
 TRANSLATION_PROMPT = """You are an expert prompt engineer. Your task is to rewrite a prompt that was originally designed for OpenAI GPT models so that it works optimally on Meta's Llama model.
@@ -91,20 +92,20 @@ def translate_prompt(
     score: int = 0,
 ) -> dict:
     """
-    Translates/refines prompts using Groq Llama.
-
-    If prev_system/prev_user/feedback are provided, performs a refinement pass.
-    Otherwise performs a fresh translation.
-
-    Returns:
-        dict with keys: system_prompt, user_prompt
+    Translates/refines prompts using Groq Llama or returns mocked optimized prompts.
     """
-    api_key = os.environ.get("GROQ_API_KEY", "")
-    model = os.environ.get("GROQ_MODEL", "llama3-70b-8192")
+    if config.USE_MOCK_APIS:
+        time.sleep(1.0)
+        return {
+            "system_prompt": f"[Mock Optimized System] You are a strict system optimized for {config.TARGET_MODEL}. Ensure highly structured output and constraint adherence.",
+            "user_prompt": f"[Mock Optimized User] Analyze this strictly according to constraints: {user_prompt}"
+        }
+
+    api_key = config.OPTIMIZER_API_KEY
+    model = config.OPTIMIZER_MODEL
 
     client = Groq(api_key=api_key)
 
-    # Decide whether this is a fresh translation or a refinement
     if prev_system and feedback:
         prompt = REFINEMENT_PROMPT.format(
             system_prompt=system_prompt or "(none)",
@@ -139,7 +140,6 @@ def translate_prompt(
 
     result = _parse_translation(raw_text)
 
-    # Fallback: if parsing failed, return the originals
     if not result["system_prompt"] and not result["user_prompt"]:
         result["system_prompt"] = system_prompt or ""
         result["user_prompt"] = user_prompt or ""
