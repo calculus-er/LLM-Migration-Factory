@@ -36,4 +36,26 @@ class Config:
     OPTIMIZATION_THRESHOLD: int = int(os.environ.get("OPTIMIZATION_THRESHOLD", "90"))
     OPTIMIZATION_MAX_ITERATIONS: int = int(os.environ.get("OPTIMIZATION_MAX_ITERATIONS", "5"))
 
+    # Rough USD per 1k tokens for target-side cost estimate in reports (honesty: tune to your provider)
+    TARGET_COST_INPUT_PER_1K: float = float(os.environ.get("TARGET_COST_INPUT_PER_1K", "0.0003"))
+    TARGET_COST_OUTPUT_PER_1K: float = float(os.environ.get("TARGET_COST_OUTPUT_PER_1K", "0.0006"))
+
+    # UI labels (optional; default to model ids for honesty)
+    SOURCE_LABEL: str = os.environ.get("SOURCE_LABEL", "").strip() or os.environ.get("SOURCE_MODEL", "source")
+    TARGET_LABEL: str = os.environ.get("TARGET_LABEL", "").strip() or os.environ.get("TARGET_MODEL", "target")
+    JUDGE_LABEL: str = os.environ.get("JUDGE_LABEL", "").strip() or os.environ.get("JUDGE_MODEL", "judge")
+    OPTIMIZER_LABEL: str = os.environ.get("OPTIMIZER_LABEL", "").strip() or os.environ.get("OPTIMIZER_MODEL", "optimizer")
+
+    # CORS: comma-separated origins; see main.py
+    @staticmethod
+    def allowed_origins() -> list[str]:
+        raw = os.environ.get(
+            "ALLOWED_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,"
+            "http://localhost:5174,http://127.0.0.1:5174,"
+            "http://localhost:5175,http://127.0.0.1:5175",
+        )
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 config = Config()

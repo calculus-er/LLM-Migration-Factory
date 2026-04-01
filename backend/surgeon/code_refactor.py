@@ -6,7 +6,7 @@ the Target provider (OpenAI-compatible endpoint) with the optimized prompts
 from the optimization loop.
 """
 import ast
-import textwrap
+import json
 from typing import List, Dict
 from config import config
 
@@ -72,19 +72,20 @@ def refactor_code(
                 indent = _get_indent(lines[node.lineno - 1])
                 target_model = config.TARGET_MODEL
 
-                sys_prompt = optimized["final_system_prompt"].replace('"', '\\"')
-                usr_prompt = optimized["final_user_prompt"].replace('"', '\\"')
+                messages_list = [
+                    {"role": "system", "content": optimized["final_system_prompt"]},
+                    {"role": "user", "content": optimized["final_user_prompt"]},
+                ]
+                messages_json = json.dumps(messages_list)
+                messages_literal = repr(messages_json)
 
                 call_target = _get_call_target(node, original_source)
-                
+
                 replacement = (
                     f'{indent}# LLM Factory: Optimized Prompt for {config.TARGET_PROVIDER}\n'
                     f'{indent}{call_target}.chat.completions.create(\n'
                     f'{indent}    model="{target_model}",\n'
-                    f'{indent}    messages=[\n'
-                    f'{indent}        {{"role": "system", "content": "{sys_prompt}"}},\n'
-                    f'{indent}        {{"role": "user", "content": "{usr_prompt}"}},\n'
-                    f'{indent}    ],\n'
+                    f'{indent}    messages=json.loads({messages_literal}),\n'
                     f'{indent}    temperature=0.7,\n'
                     f'{indent}    max_tokens=1024,\n'
                     f'{indent})'
@@ -95,6 +96,7 @@ def refactor_code(
     if import_edits:
         first_import = import_edits[0]
         import_replacement = (
+            'import json\n'
             'import os\n'
             f'from openai import OpenAI  # OpenAI-compatible SDK used for {config.TARGET_PROVIDER}'
         )

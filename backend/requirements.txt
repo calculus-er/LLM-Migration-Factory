@@ -2,3 +2,6 @@ fastapi[standard]
 pydantic
 python-dotenv
 openai
+boto3
+pytest
+httpx

@@ -1,18 +1,26 @@
 """
-Target Runner — Executes translated prompts against the Target Model
-(e.g., NVIDIA Llama, Groq, Together AI).
+Target Runner — Executes translated prompts against the Target Model.
+
+When prompts contain {placeholder} variables, they are substituted with
+the same sample data used in golden capture so the comparison is fair.
 """
 import time
 from openai import OpenAI
 from config import config
+from utils.placeholder_resolver import substitute_placeholders
 
 
 def run_on_target(system_prompt: str, user_prompt: str) -> dict:
     """
     Sends the translated system/user prompts to the specified Target model.
+    Substitutes any remaining {placeholder} variables with sample data.
     """
+    # Substitute placeholders so the target gets real data to process
+    resolved_system = substitute_placeholders(system_prompt) if system_prompt else system_prompt
+    resolved_user = substitute_placeholders(user_prompt)
+
     if config.USE_MOCK_APIS:
-        time.sleep(1.0) # simulate network latency
+        time.sleep(1.0)
         return {
             "response_text": f"[Mock Mode] Successfully ran highly optimized {config.TARGET_MODEL} model response based on your newly structured constraints.",
             "latency_ms": 1000.0,
@@ -20,16 +28,15 @@ def run_on_target(system_prompt: str, user_prompt: str) -> dict:
             "completion_tokens": 40,
         }
 
-    # Use the OpenAI client but point it to the generic TARGET base URL
     client = OpenAI(
         api_key=config.TARGET_API_KEY,
         base_url=config.TARGET_BASE_URL,
     )
 
     messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": user_prompt})
+    if resolved_system:
+        messages.append({"role": "system", "content": resolved_system})
+    messages.append({"role": "user", "content": resolved_user})
 
     start = time.time()
     try:

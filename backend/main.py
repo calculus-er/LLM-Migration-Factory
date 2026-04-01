@@ -1,18 +1,16 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 import asyncio
 import uuid
 import threading
 
-from models import JobPhase, CallSite
+from models import JobPhase
 from job_store import job_store
 from parser.ast_parser import parse_openai_calls
 from pipeline.orchestrator import run_pipeline
-
-load_dotenv()
+from config import config
 
 
 @asynccontextmanager
@@ -24,7 +22,7 @@ app = FastAPI(title="LLM Migration Factory API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=config.allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +32,30 @@ app.add_middleware(
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/config")
+def public_config():
+    """Non-secret configuration for the UI (must match backend .env)."""
+    return {
+        "source_model": config.SOURCE_MODEL,
+        "source_base_url": config.SOURCE_BASE_URL,
+        "source_label": config.SOURCE_LABEL,
+        "target_provider": config.TARGET_PROVIDER,
+        "target_model": config.TARGET_MODEL,
+        "target_base_url": config.TARGET_BASE_URL,
+        "target_label": config.TARGET_LABEL,
+        "target_api_key_env_var": config.TARGET_API_KEY_ENV_VAR,
+        "judge_model": config.JUDGE_MODEL,
+        "judge_base_url": config.JUDGE_BASE_URL,
+        "judge_label": config.JUDGE_LABEL,
+        "optimizer_model": config.OPTIMIZER_MODEL,
+        "optimizer_base_url": config.OPTIMIZER_BASE_URL,
+        "optimizer_label": config.OPTIMIZER_LABEL,
+        "optimization_threshold": config.OPTIMIZATION_THRESHOLD,
+        "optimization_max_iterations": config.OPTIMIZATION_MAX_ITERATIONS,
+        "use_mock_apis": config.USE_MOCK_APIS,
+    }
 
 
 @app.post("/api/upload")

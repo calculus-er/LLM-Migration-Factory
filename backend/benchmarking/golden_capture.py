@@ -1,9 +1,9 @@
 import time
-import asyncio
 from typing import Optional
 from openai import OpenAI
 from models import CallSite, GoldenResponse
 from config import config
+from utils.placeholder_resolver import substitute_messages, has_placeholders
 
 COST_PER_1K_TOKENS = {
     "gpt-4o": {"input": 0.005, "output": 0.015},
@@ -19,19 +19,17 @@ def estimate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -
     return input_cost + output_cost
 
 def capture_golden_response(call_site: CallSite) -> tuple:
-    """
-    Executes the parsed CallSite against the Source model to capture the golden truth baseline.
-    
-    Returns:
-        (GoldenResponse, None) on success, or (None, error_message) on failure.
-    """
-    # The model in the uploaded script (for cost estimation / logging only)
     original_model = call_site.model or "unknown"
-    # The actual model we send to the Source provider's API
     source_model = config.SOURCE_MODEL
 
+    api_messages = substitute_messages(call_site.messages)
+
+    import sys
+    print(f"[GOLDEN] Original msg: {call_site.messages}", file=sys.stderr)
+    print(f"[GOLDEN] Substituted msg: {api_messages}", file=sys.stderr)
+
     if config.USE_MOCK_APIS:
-        time.sleep(1.2)  # simulate network latency
+        time.sleep(1.2)
         return GoldenResponse(
             call_site_lineno=call_site.lineno,
             original_messages=call_site.messages,
@@ -51,8 +49,8 @@ def capture_golden_response(call_site: CallSite) -> tuple:
     )
 
     kwargs = {
-        "model": source_model,  # Always use the configured Source model
-        "messages": call_site.messages,
+        "model": source_model,
+        "messages": api_messages,
     }
     if call_site.temperature is not None:
         kwargs["temperature"] = call_site.temperature
@@ -63,20 +61,23 @@ def capture_golden_response(call_site: CallSite) -> tuple:
     try:
         response = client.chat.completions.create(**kwargs)
     except Exception as e:
+        print(f"[GOLDEN] Error: {e}", file=sys.stderr)
         return None, f"API error: {str(e)}"
     end_time = time.time()
 
     latency_ms = (end_time - start_time) * 1000.0
     text_content = response.choices[0].message.content or ""
     
-    prompt_tokens = response.usage.prompt_tokens
-    completion_tokens = response.usage.completion_tokens
+    print(f"[GOLDEN] Response: {repr(text_content)}", file=sys.stderr)
+    
+    prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
+    completion_tokens = getattr(response.usage, "completion_tokens", 0)
     
     est_cost = estimate_cost(original_model, prompt_tokens, completion_tokens)
 
     return GoldenResponse(
         call_site_lineno=call_site.lineno,
-        original_messages=call_site.messages,
+        original_messages=call_site.messages, 
         response_text=text_content,
         latency_ms=latency_ms,
         prompt_tokens=prompt_tokens,

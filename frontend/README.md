@@ -1,3 +1,15 @@
+# LLM Migration Factory — Frontend
+
+## Environment
+
+Copy [`.env.example`](./.env.example) to `.env` and set:
+
+- **`VITE_API_BASE`** — Backend URL (e.g. `http://localhost:8000` for local dev). The UI loads `GET {VITE_API_BASE}/api/config` for labels and uses the same host for WebSockets (`ws`/`wss` is derived automatically unless `VITE_WS_BASE` is set).
+
+For production (e.g. Vercel), set `VITE_API_BASE` to your deployed API origin and add that origin to the backend `ALLOWED_ORIGINS`.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

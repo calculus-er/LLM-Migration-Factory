@@ -1,13 +1,10 @@
 """
 Report Generator — Assembles the final MigrationReport with
-aggregated metrics comparing original (OpenAI) vs target (NVIDIA Llama).
+aggregated metrics (estimated costs; tune TARGET_COST_* in config / .env).
 """
 from typing import List
 from models import MigrationReport, GoldenResponse, OptimizationResult
-
-
-# Rough cost estimates for NVIDIA NIM Llama per 1k tokens
-NVIDIA_COST_PER_1K = {"input": 0.0003, "output": 0.0006}
+from config import config
 
 
 def generate_report(
@@ -42,10 +39,10 @@ def generate_report(
         latencies = [r.target_latency_ms for r in optimization_results]
         avg_target_latency = sum(latencies) / len(latencies)
 
-        # Estimate target cost from the golden token counts (rough approximation)
+        # Estimate target cost from golden token counts using configured $/1k (rough)
         for g in golden_responses:
-            input_cost = (g.prompt_tokens / 1000.0) * NVIDIA_COST_PER_1K["input"]
-            output_cost = (g.completion_tokens / 1000.0) * NVIDIA_COST_PER_1K["output"]
+            input_cost = (g.prompt_tokens / 1000.0) * config.TARGET_COST_INPUT_PER_1K
+            output_cost = (g.completion_tokens / 1000.0) * config.TARGET_COST_OUTPUT_PER_1K
             target_cost += input_cost + output_cost
 
     # Calculate savings

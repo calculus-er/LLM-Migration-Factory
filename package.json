@@ -1,0 +1,7 @@
+{
+  "name": "llm-migration-factory",
+  "private": true,
+  "scripts": {
+    "verify": "node scripts/verify.mjs"
+  }
+}

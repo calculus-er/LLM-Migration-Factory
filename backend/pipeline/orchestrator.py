@@ -61,30 +61,37 @@ def run_pipeline(job_id: str, script_content: str, filename: str):
         log(f"🥇 Phase 2: Capturing golden baseline from Source model ({config.SOURCE_MODEL})...")
 
         golden_responses = []
+        failed_lines: list[int] = []
         for i, site in enumerate(call_sites):
             log(f"  Capturing baseline for call site {i+1}/{len(call_sites)} (line {site.lineno})...")
             golden, error = capture_golden_response(site)
             if golden:
                 golden_responses.append(golden)
-                log(f"  ✓ Captured! Latency: {golden.latency_ms:.0f}ms, "
+                log(f"  Captured. Latency: {golden.latency_ms:.0f}ms, "
                     f"Tokens: {golden.prompt_tokens}+{golden.completion_tokens}, "
                     f"Cost: ${golden.estimated_cost_usd:.4f}")
             else:
-                log(f"  ✗ Failed for call site at line {site.lineno}: {error}", level="error")
+                failed_lines.append(site.lineno)
+                log(f"  Failed for call site at line {site.lineno}: {error}", level="error")
 
-        if not golden_responses:
-            log(f"Failed to capture any golden responses. Check your SOURCE_API_KEY and SOURCE_BASE_URL in .env.", level="error")
-            job_store.set_error(job_id, "Golden capture failed for all call sites.")
+        if len(golden_responses) != len(call_sites):
+            lines_str = ", ".join(str(x) for x in failed_lines) if failed_lines else "unknown"
+            msg = (
+                f"Golden capture failed for one or more call sites (lines: {lines_str}). "
+                "All sites must succeed. Check SOURCE_API_KEY and SOURCE_BASE_URL in .env."
+            )
+            log(msg, level="error")
+            job_store.set_error(job_id, msg)
             return
 
-        log(f"✅ Golden capture complete. {len(golden_responses)} baseline(s) recorded.", level="success")
+        log(f"Golden capture complete. {len(golden_responses)} baseline(s) recorded.", level="success")
 
         # ========== PHASE 3: OPTIMIZATION LOOP ==========
         job_store.set_phase(job_id, JobPhase.OPTIMIZING)
         log(f"🔄 Phase 3: Running agentic optimization loop...")
 
         optimization_results = []
-        for i, (site, golden) in enumerate(zip(call_sites, golden_responses)):
+        for i, (site, golden) in enumerate(zip(call_sites, golden_responses, strict=True)):
             log(f"  Optimizing call site {i+1}/{len(call_sites)} (line {site.lineno})...")
             result = run_optimization_loop(
                 call_site=site,

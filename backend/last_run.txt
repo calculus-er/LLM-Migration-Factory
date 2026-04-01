@@ -1,0 +1,60 @@
+Uploaded. Job: job-b8cc8488
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=optimizing
+  phase=complete
+
+============================================================
+Phase: complete  |  Error: None
+Avg Score: 57.5%
+Cost Savings: 87.1%
+
+============================================================
+CALL SITE LINE 14 ù Final Score: 95.0
+============================================================
+
+--- Iter 1 (Score: 95.0) ---
+SYS:  You are a highly capable summarization assistant. Your task is to extract the most important core points from the provided text and present them in a concise, well-structured bulleted list. Focus on clarity and precision, ensuring that each bullet re
+USER: Please summarize the following text:
+
+{text}
+RESP: Here are the core points from the provided text:
+
+* Artificial intelligence (AI) has transformed industries globally.
+* AI systems are making decisions that previously required human expertise in areas such as:
+  * Healthcare diagnostics
+  * Autonomous vehicles
+* Significant challenges associated wi
+JUDGE: The new response captures all key points from the original with equivalent meaning; differences are only in wording and bullet formatting, which do not affect completeness.
+
+============================================================
+CALL SITE LINE 33 ù Final Score: 20.0
+============================================================
+
+--- Iter 1 (Score: 0.0) ---
+SYS:  You are a sentiment analysis engine. Your task is to analyze the sentiment of the user's review and classify it into one of three categories: 'POSITIVE', 'NEGATIVE', or 'NEUTRAL'. Your classification must be based solely on the sentiment expressed in
+USER: {review}
+RESP: POSITIVE
+JUDGE: The original response was empty, providing no classification, while the new response supplies "POSITIVE". Since there is no content to compare against, the new answer does not align with the original output.
+
+--- Iter 2 (Score: 10.0) ---
+SYS:  You are a sentiment analysis engine. Your task is to analyze the sentiment of the user's review and classify it into one of three categories: 'POSITIVE', 'NEGATIVE', or 'NEUTRAL'. Your classification must be based solely on the sentiment expressed in
+USER: {review}
+RESP: POSITIVE
+Traceback (most recent call last):
+  File "C:\Users\rishu\Desktop\ECell_Hackathon\LLM-Migration-Factory\backend\test_pipeline.py", line 62, in <module>
+    print(f'JUDGE: {fb[:300]}')
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rishu\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2011' in position 204: character maps to <undefined>

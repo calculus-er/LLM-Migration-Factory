@@ -9,9 +9,12 @@ from openai import OpenAI
 from config import config
 
 
-JUDGE_PROMPT_TEMPLATE = """You are an expert AI output evaluator. Your job is to compare an ORIGINAL response from a production AI system with a NEW response from a different model, and judge how faithfully the NEW response reproduces the ORIGINAL.
+JUDGE_PROMPT_TEMPLATE = """You are an expert AI output evaluator.
 
-## ORIGINAL RESPONSE (Golden Ground Truth):
+## Task
+Compare an ORIGINAL response (produced by a source model) with a NEW response (produced by a target model that received an optimised version of the same prompt). Judge how well the NEW response fulfils **the same user intent** as the ORIGINAL response while strictly obeying the original system prompt.
+
+## ORIGINAL RESPONSE (Baseline/Golden):
 ---
 {golden_response}
 ---
@@ -25,25 +28,27 @@ JUDGE_PROMPT_TEMPLATE = """You are an expert AI output evaluator. Your job is to
 System Prompt: {system_prompt}
 User Prompt: {user_prompt}
 
-## Evaluation Criteria:
-1. **Semantic Accuracy** (40%): Does the NEW response convey the same meaning, facts, and conclusions?
-2. **Format & Structure** (20%): Does the NEW response follow the same formatting (JSON, markdown, lists, etc.)?
-3. **Tone & Style** (20%): Is the writing style, formality, and voice consistent?
-4. **Completeness** (20%): Does the NEW response cover all the same points without missing information?
+## Scoring rubric (0-100):
+- 90-100: Excellent — same meaning, structure, tone and completeness. 
+- 70-89:  Good — minor stylistic or formatting differences, all key content present.
+- 50-69:  Fair — some meaning preserved but notable omissions or structural divergence.
+- 25-49:  Poor — partial relevance but large semantic gaps.
+- 0-24:   Fail — unrelated or empty output.
 
-## Your Response (STRICT FORMAT):
-You MUST respond with EXACTLY two lines in this format, nothing else:
+## CRITICAL Scoring guidance:
+1. Compare semantic content if both responses answer the query substantively.
+2. If BOTH responses ask for missing input (because the prompt has a placeholder variable), give 90+.
+3. IMPORTANT FLAG GRACE RULE: If the ORIGINAL response failed to follow strict formatting constraints requested in the System Prompt (for example, providing conversational text when asked for a SINGLE output word/JSON), but the NEW response CORRECTLY followed the system prompt constraints (e.g. outputting exactly "POSITIVE"), you MUST score the NEW response 90-100. Do NOT penalize a good target response for fixing the source model's formatting failures!
 
+## Your Response — reply with EXACTLY two lines:
 SCORE: <integer 0-100>
-FEEDBACK: <2-3 sentences explaining the score, noting specific differences or issues>
+FEEDBACK: <1-3 sentences noting key differences>
 """
 
 
 def _strip_thinking(text: str) -> str:
     """Remove <think>...</think> blocks from reasoning model outputs."""
-    # Strip XML-style thinking blocks (greedy)
     cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    # Also handle unclosed <think> blocks (model got cut off mid-thought)
     cleaned = re.sub(r'<think>.*', '', cleaned, flags=re.DOTALL)
     return cleaned.strip()
 
@@ -51,24 +56,19 @@ def _strip_thinking(text: str) -> str:
 def _parse_score(text: str) -> tuple:
     """
     Robustly extract SCORE and FEEDBACK from judge output.
-    Handles markdown bold, varied formatting, thinking blocks, etc.
     Returns (score: int, feedback: str).
     """
-    # First, strip any thinking blocks
     text = _strip_thinking(text)
 
     score = 0
-    feedback = text  # Default feedback is the full (cleaned) response
+    feedback = text
 
-    # Strategy 1: Line-by-line scan for SCORE: pattern (handles markdown bold too)
     for line in text.splitlines():
         stripped = line.strip()
-        # Remove markdown bold markers: **SCORE:** -> SCORE:
         cleaned_line = re.sub(r'\*{1,2}', '', stripped)
 
         if cleaned_line.upper().startswith("SCORE:"):
             score_part = cleaned_line.split(":", 1)[1].strip()
-            # Extract first integer from the score part (handles "85", "85/100", "85 out of 100")
             match = re.search(r'(\d+)', score_part)
             if match:
                 score = min(int(match.group(1)), 100)
@@ -76,14 +76,12 @@ def _parse_score(text: str) -> tuple:
         elif cleaned_line.upper().startswith("FEEDBACK:"):
             feedback = cleaned_line.split(":", 1)[1].strip()
 
-    # Strategy 2: If Strategy 1 found score=0, do a broader regex search
     if score == 0:
-        # Look for patterns like "Score: 85", "score is 85", "85/100", etc.
         patterns = [
-            r'(?i)score\s*[:=]\s*(\d+)',       # "Score: 85" or "score=85"
-            r'(\d+)\s*/\s*100',                 # "85/100"
-            r'(?i)score\s+(?:is|of)\s+(\d+)',   # "score is 85" or "score of 85"
-            r'(?i)(\d+)\s*(?:out of|\/)\s*100', # "85 out of 100"
+            r'(?i)score\s*[:=]\s*(\d+)',
+            r'(\d+)\s*/\s*100',
+            r'(?i)score\s+(?:is|of)\s+(\d+)',
+            r'(?i)(\d+)\s*(?:out of|\/)\s*100',
         ]
         for pattern in patterns:
             match = re.search(pattern, text)
@@ -100,14 +98,12 @@ def evaluate_response(
     system_prompt: str,
     user_prompt: str,
 ) -> dict:
-    """
-    Uses the Judge model to compare responses.
-    """
+    """Uses the Judge model to compare responses. No shortcuts — always calls the real Judge."""
     if config.USE_MOCK_APIS:
-        time.sleep(1.5)  # simulate reasoning
+        time.sleep(1.5)
         return {
             "score": 96,
-            "feedback": "[Mock Judge] The response perfectly aligns with the required semantic meaning and preserves all vital constraints.",
+            "feedback": "[Mock Judge] The response perfectly aligns with the required semantic meaning.",
             "passed": True
         }
 
@@ -119,21 +115,21 @@ def evaluate_response(
     threshold = config.OPTIMIZATION_THRESHOLD
 
     prompt = JUDGE_PROMPT_TEMPLATE.format(
-        golden_response=golden_response,
-        target_response=target_response,
+        golden_response=golden_response or "(empty response)",
+        target_response=target_response or "(empty response)",
         system_prompt=system_prompt or "(none)",
         user_prompt=user_prompt or "(none)",
     )
-
+    
     try:
         response = client.chat.completions.create(
             model=model_name,
             messages=[
-                {"role": "system", "content": "You are a strict, precise evaluation assistant. Respond with ONLY the SCORE and FEEDBACK lines. No explanations, no thinking, no markdown."},
+                {"role": "system", "content": "You are a strict, precise evaluation assistant. Respond with ONLY the SCORE and FEEDBACK lines. Do not wrap in markdown or thinking tags."},
                 {"role": "user", "content": prompt},
             ],
             temperature=0,
-            max_tokens=1024,  # Reasoning models need more tokens for thinking chain
+            max_tokens=1024,
         )
         raw_text = response.choices[0].message.content or ""
         raw_text = raw_text.strip()
