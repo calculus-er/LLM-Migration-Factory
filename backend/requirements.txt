@@ -1,0 +1,7 @@
+fastapi[standard]
+pydantic
+python-dotenv
+openai
+groq
+google-generativeai
+openai-types
