@@ -1,10 +1,10 @@
 """
-Prompt Translator — Uses Groq Llama to rewrite OpenAI-format prompts
-into optimized prompts for the NVIDIA Llama target model.
+Prompt Translator — Rewrites source prompts to be optimized for
+the target model using the Optimizer LLM.
 Accepts optional judge feedback to iteratively improve the translation.
 """
 import time
-from groq import Groq
+from openai import OpenAI
 from config import config
 
 
@@ -69,16 +69,27 @@ USER_PROMPT: <your improved user prompt on a single paragraph, no newlines>
 
 
 def _parse_translation(raw_text: str) -> dict:
-    """Parse the SYSTEM_PROMPT / USER_PROMPT response format."""
+    """Parse the SYSTEM_PROMPT / USER_PROMPT response format.
+    Handles reasoning model outputs that may include <think> blocks."""
+    import re
+
+    # Strip <think>...</think> blocks from reasoning models
+    cleaned = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL)
+    cleaned = re.sub(r'<think>.*', '', cleaned, flags=re.DOTALL)
+    cleaned = cleaned.strip()
+
     system_prompt = ""
     user_prompt = ""
 
-    for line in raw_text.splitlines():
+    for line in cleaned.splitlines():
         stripped = line.strip()
-        if stripped.startswith("SYSTEM_PROMPT:"):
-            system_prompt = stripped.split(":", 1)[1].strip()
-        elif stripped.startswith("USER_PROMPT:"):
-            user_prompt = stripped.split(":", 1)[1].strip()
+        # Remove markdown bold markers
+        stripped_clean = re.sub(r'\*{1,2}', '', stripped)
+
+        if stripped_clean.startswith("SYSTEM_PROMPT:"):
+            system_prompt = stripped_clean.split(":", 1)[1].strip()
+        elif stripped_clean.startswith("USER_PROMPT:"):
+            user_prompt = stripped_clean.split(":", 1)[1].strip()
 
     return {"system_prompt": system_prompt, "user_prompt": user_prompt}
 
@@ -92,7 +103,7 @@ def translate_prompt(
     score: int = 0,
 ) -> dict:
     """
-    Translates/refines prompts using Groq Llama or returns mocked optimized prompts.
+    Translates/refines prompts using the Optimizer model via OpenAI-compatible API.
     """
     if config.USE_MOCK_APIS:
         time.sleep(1.0)
@@ -101,10 +112,11 @@ def translate_prompt(
             "user_prompt": f"[Mock Optimized User] Analyze this strictly according to constraints: {user_prompt}"
         }
 
-    api_key = config.OPTIMIZER_API_KEY
+    client = OpenAI(
+        api_key=config.OPTIMIZER_API_KEY,
+        base_url=config.OPTIMIZER_BASE_URL,
+    )
     model = config.OPTIMIZER_MODEL
-
-    client = Groq(api_key=api_key)
 
     if prev_system and feedback:
         prompt = REFINEMENT_PROMPT.format(
@@ -125,11 +137,11 @@ def translate_prompt(
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are a precise prompt engineering assistant. Follow the output format exactly."},
+                {"role": "system", "content": "You are a precise prompt engineering assistant. Respond with ONLY the SYSTEM_PROMPT and USER_PROMPT lines. No explanations, no thinking, no markdown."},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.3,
-            max_tokens=1024,
+            max_tokens=4096,
         )
         raw_text = response.choices[0].message.content or ""
     except Exception as e:

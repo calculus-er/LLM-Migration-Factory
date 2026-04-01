@@ -26,6 +26,39 @@ class OpenAIAstVisitor(ast.NodeVisitor):
         end = node.end_lineno
         return "\n".join(self.source_lines[start:end])
 
+    def _extract_value(self, node) -> Any:
+        """Extract a Python value from an AST node, with fallbacks for complex expressions."""
+        if isinstance(node, ast.Constant):
+            return node.value
+        elif isinstance(node, ast.JoinedStr):
+            # f-string: reconstruct a representative string from its parts
+            parts = []
+            for v in node.values:
+                if isinstance(v, ast.Constant):
+                    parts.append(str(v.value))
+                elif isinstance(v, ast.FormattedValue):
+                    # Use the variable name or a placeholder
+                    if isinstance(v.value, ast.Name):
+                        parts.append(f"{{{v.value.id}}}")
+                    else:
+                        parts.append("{...}")
+            return "".join(parts)
+        elif isinstance(node, ast.Name):
+            return f"{{{node.id}}}"
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            # String concatenation like "Summarize: " + text
+            left = self._extract_value(node.left)
+            right = self._extract_value(node.right)
+            if isinstance(left, str) and isinstance(right, str):
+                return left + right
+            return str(left) + str(right)
+        else:
+            # Last resort: try to unparse it back to source
+            try:
+                return ast.unparse(node)
+            except Exception:
+                return "(dynamic expression)"
+
     def _extract_dict_from_list(self, list_node: ast.List) -> List[Dict]:
         """Extracts messages from the list of dicts"""
         messages = []
@@ -33,8 +66,8 @@ class OpenAIAstVisitor(ast.NodeVisitor):
             if isinstance(elem, ast.Dict):
                 msg = {}
                 for k, v in zip(elem.keys, elem.values):
-                    if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
-                        msg[k.value] = v.value
+                    if isinstance(k, ast.Constant):
+                        msg[k.value] = self._extract_value(v)
                 messages.append(msg)
         return messages
 

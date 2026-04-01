@@ -9,7 +9,7 @@ COST_PER_1K_TOKENS = {
     "gpt-4o": {"input": 0.005, "output": 0.015},
     "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
     "gpt-4-turbo": {"input": 0.01, "output": 0.03},
-    "default": {"input": 0.005, "output": 0.015}
+    "default": {"input": 0.001, "output": 0.002}
 }
 
 def estimate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -18,28 +18,32 @@ def estimate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -
     output_cost = (completion_tokens / 1000.0) * rates["output"]
     return input_cost + output_cost
 
-def capture_golden_response(call_site: CallSite) -> Optional[GoldenResponse]:
+def capture_golden_response(call_site: CallSite) -> tuple:
     """
-    Executes the parsed CallSite against OpenAI to capture the golden truth baseline.
-    If USE_MOCK_APIS is enabled in .env, simulates a network call.
+    Executes the parsed CallSite against the Source model to capture the golden truth baseline.
+    
+    Returns:
+        (GoldenResponse, None) on success, or (None, error_message) on failure.
     """
-    model_used = call_site.model or config.SOURCE_MODEL
+    # The model in the uploaded script (for cost estimation / logging only)
+    original_model = call_site.model or "unknown"
+    # The actual model we send to the Source provider's API
+    source_model = config.SOURCE_MODEL
 
     if config.USE_MOCK_APIS:
-        time.sleep(1.2) # simulate network latency
+        time.sleep(1.2)  # simulate network latency
         return GoldenResponse(
             call_site_lineno=call_site.lineno,
             original_messages=call_site.messages,
-            response_text="[Mock Mode] This is a simulated original response from the Source Model. In a real run, this would be the actual text output from OpenAI.",
+            response_text="[Mock Mode] This is a simulated original response from the Source Model.",
             latency_ms=1200.0,
             prompt_tokens=45,
             completion_tokens=30,
-            estimated_cost_usd=estimate_cost(model_used, 45, 30)
-        )
+            estimated_cost_usd=estimate_cost(original_model, 45, 30)
+        ), None
 
-    if not config.SOURCE_API_KEY or config.SOURCE_API_KEY.startswith("sk-..."):
-        print("Warning: Missing or invalid SOURCE_API_KEY")
-        return None
+    if not config.SOURCE_API_KEY:
+        return None, "Missing SOURCE_API_KEY in .env"
 
     client = OpenAI(
         api_key=config.SOURCE_API_KEY,
@@ -47,7 +51,7 @@ def capture_golden_response(call_site: CallSite) -> Optional[GoldenResponse]:
     )
 
     kwargs = {
-        "model": model_used,
+        "model": source_model,  # Always use the configured Source model
         "messages": call_site.messages,
     }
     if call_site.temperature is not None:
@@ -59,8 +63,7 @@ def capture_golden_response(call_site: CallSite) -> Optional[GoldenResponse]:
     try:
         response = client.chat.completions.create(**kwargs)
     except Exception as e:
-        print(f"Error capturing golden response for call site on line {call_site.lineno}: {e}")
-        return None
+        return None, f"API error: {str(e)}"
     end_time = time.time()
 
     latency_ms = (end_time - start_time) * 1000.0
@@ -69,7 +72,7 @@ def capture_golden_response(call_site: CallSite) -> Optional[GoldenResponse]:
     prompt_tokens = response.usage.prompt_tokens
     completion_tokens = response.usage.completion_tokens
     
-    est_cost = estimate_cost(model_used, prompt_tokens, completion_tokens)
+    est_cost = estimate_cost(original_model, prompt_tokens, completion_tokens)
 
     return GoldenResponse(
         call_site_lineno=call_site.lineno,
@@ -79,4 +82,4 @@ def capture_golden_response(call_site: CallSite) -> Optional[GoldenResponse]:
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         estimated_cost_usd=est_cost
-    )
+    ), None

@@ -124,8 +124,9 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
     """Stream live pipeline events to the frontend via WebSocket."""
     await websocket.accept()
 
+    loop = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
-    job_store.subscribe(job_id, queue)
+    job_store.subscribe(job_id, queue, loop)
 
     try:
         # Send existing logs first
@@ -135,10 +136,16 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                 await websocket.send_json({"type": "log", "level": log.level, "message": log.message})
             await websocket.send_json({"type": "phase", "phase": job.phase.value})
 
+            # If the job already completed before we connected, send report_ready and exit
+            if job.phase in (JobPhase.COMPLETE, JobPhase.FAILED):
+                if job.report:
+                    await websocket.send_json({"type": "report_ready"})
+                return
+
         # Stream new events
         while True:
             try:
-                event = await asyncio.wait_for(queue.get(), timeout=60.0)
+                event = await asyncio.wait_for(queue.get(), timeout=120.0)
                 await websocket.send_json(event)
 
                 # Stop streaming when job is done
@@ -152,5 +159,8 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                 await websocket.send_json({"type": "heartbeat"})
     except WebSocketDisconnect:
         pass
+    except Exception:
+        pass
     finally:
         job_store.unsubscribe(job_id, queue)
+

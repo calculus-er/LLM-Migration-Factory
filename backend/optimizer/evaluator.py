@@ -1,10 +1,11 @@
 """
-Evaluator — Uses Google Gemini as an LLM-as-a-Judge to compare
+Evaluator — Uses the Judge model (via OpenAI-compatible API) to compare
 the target model's response against the golden ground truth.
 Returns a score (0-100) and detailed feedback.
 """
+import re
 import time
-import google.generativeai as genai
+from openai import OpenAI
 from config import config
 
 
@@ -31,11 +32,66 @@ User Prompt: {user_prompt}
 4. **Completeness** (20%): Does the NEW response cover all the same points without missing information?
 
 ## Your Response (STRICT FORMAT):
-You MUST respond with EXACTLY this format, nothing else:
+You MUST respond with EXACTLY two lines in this format, nothing else:
 
 SCORE: <integer 0-100>
 FEEDBACK: <2-3 sentences explaining the score, noting specific differences or issues>
 """
+
+
+def _strip_thinking(text: str) -> str:
+    """Remove <think>...</think> blocks from reasoning model outputs."""
+    # Strip XML-style thinking blocks (greedy)
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # Also handle unclosed <think> blocks (model got cut off mid-thought)
+    cleaned = re.sub(r'<think>.*', '', cleaned, flags=re.DOTALL)
+    return cleaned.strip()
+
+
+def _parse_score(text: str) -> tuple:
+    """
+    Robustly extract SCORE and FEEDBACK from judge output.
+    Handles markdown bold, varied formatting, thinking blocks, etc.
+    Returns (score: int, feedback: str).
+    """
+    # First, strip any thinking blocks
+    text = _strip_thinking(text)
+
+    score = 0
+    feedback = text  # Default feedback is the full (cleaned) response
+
+    # Strategy 1: Line-by-line scan for SCORE: pattern (handles markdown bold too)
+    for line in text.splitlines():
+        stripped = line.strip()
+        # Remove markdown bold markers: **SCORE:** -> SCORE:
+        cleaned_line = re.sub(r'\*{1,2}', '', stripped)
+
+        if cleaned_line.upper().startswith("SCORE:"):
+            score_part = cleaned_line.split(":", 1)[1].strip()
+            # Extract first integer from the score part (handles "85", "85/100", "85 out of 100")
+            match = re.search(r'(\d+)', score_part)
+            if match:
+                score = min(int(match.group(1)), 100)
+
+        elif cleaned_line.upper().startswith("FEEDBACK:"):
+            feedback = cleaned_line.split(":", 1)[1].strip()
+
+    # Strategy 2: If Strategy 1 found score=0, do a broader regex search
+    if score == 0:
+        # Look for patterns like "Score: 85", "score is 85", "85/100", etc.
+        patterns = [
+            r'(?i)score\s*[:=]\s*(\d+)',       # "Score: 85" or "score=85"
+            r'(\d+)\s*/\s*100',                 # "85/100"
+            r'(?i)score\s+(?:is|of)\s+(\d+)',   # "score is 85" or "score of 85"
+            r'(?i)(\d+)\s*(?:out of|\/)\s*100', # "85 out of 100"
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                score = min(int(match.group(1)), 100)
+                break
+
+    return score, feedback
 
 
 def evaluate_response(
@@ -48,20 +104,19 @@ def evaluate_response(
     Uses the Judge model to compare responses.
     """
     if config.USE_MOCK_APIS:
-        time.sleep(1.5) # simulate reasoning
-        # Return a passing score to progress the loop smoothly in mock demos
+        time.sleep(1.5)  # simulate reasoning
         return {
             "score": 96,
             "feedback": "[Mock Judge] The response perfectly aligns with the required semantic meaning and preserves all vital constraints.",
             "passed": True
         }
 
-    api_key = config.JUDGE_API_KEY
+    client = OpenAI(
+        api_key=config.JUDGE_API_KEY,
+        base_url=config.JUDGE_BASE_URL,
+    )
     model_name = config.JUDGE_MODEL
     threshold = config.OPTIMIZATION_THRESHOLD
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name)
 
     prompt = JUDGE_PROMPT_TEMPLATE.format(
         golden_response=golden_response,
@@ -71,8 +126,17 @@ def evaluate_response(
     )
 
     try:
-        response = model.generate_content(prompt)
-        raw_text = response.text.strip()
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a strict, precise evaluation assistant. Respond with ONLY the SCORE and FEEDBACK lines. No explanations, no thinking, no markdown."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0,
+            max_tokens=1024,  # Reasoning models need more tokens for thinking chain
+        )
+        raw_text = response.choices[0].message.content or ""
+        raw_text = raw_text.strip()
     except Exception as e:
         return {
             "score": 0,
@@ -80,19 +144,7 @@ def evaluate_response(
             "passed": False,
         }
 
-    score = 0
-    feedback = raw_text
-
-    for line in raw_text.splitlines():
-        line_stripped = line.strip()
-        if line_stripped.upper().startswith("SCORE:"):
-            try:
-                score_str = line_stripped.split(":", 1)[1].strip()
-                score = int(score_str.split("/")[0].strip())
-            except (ValueError, IndexError):
-                score = 0
-        elif line_stripped.upper().startswith("FEEDBACK:"):
-            feedback = line_stripped.split(":", 1)[1].strip()
+    score, feedback = _parse_score(raw_text)
 
     return {
         "score": score,

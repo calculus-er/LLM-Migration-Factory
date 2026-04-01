@@ -3,8 +3,8 @@ Pipeline Orchestrator — Chains all layers of the Migration Factory together.
 
 Flow:
   1. Parse the script (AST Parser)
-  2. Capture golden ground truth (OpenAI)
-  3. Run optimization loop per call site (Groq + NVIDIA + Gemini)
+  2. Capture golden ground truth (Source Model)
+  3. Run optimization loop per call site (Optimizer + Target + Judge)
   4. Refactor the source code (Code Surgeon)
   5. Generate the migration report
 """
@@ -17,6 +17,7 @@ from benchmarking.golden_capture import capture_golden_response
 from optimizer.optimization_loop import run_optimization_loop
 from surgeon.code_refactor import refactor_code
 from reporting.report_generator import generate_report
+from config import config
 
 
 def run_pipeline(job_id: str, script_content: str, filename: str):
@@ -57,22 +58,22 @@ def run_pipeline(job_id: str, script_content: str, filename: str):
 
         # ========== PHASE 2: GOLDEN CAPTURE ==========
         job_store.set_phase(job_id, JobPhase.GOLDEN_CAPTURE)
-        log("🥇 Phase 2: Capturing golden ground truth from OpenAI...")
+        log(f"🥇 Phase 2: Capturing golden baseline from Source model ({config.SOURCE_MODEL})...")
 
         golden_responses = []
         for i, site in enumerate(call_sites):
             log(f"  Capturing baseline for call site {i+1}/{len(call_sites)} (line {site.lineno})...")
-            golden = capture_golden_response(site)
+            golden, error = capture_golden_response(site)
             if golden:
                 golden_responses.append(golden)
                 log(f"  ✓ Captured! Latency: {golden.latency_ms:.0f}ms, "
                     f"Tokens: {golden.prompt_tokens}+{golden.completion_tokens}, "
                     f"Cost: ${golden.estimated_cost_usd:.4f}")
             else:
-                log(f"  ✗ Failed to capture golden response for call site at line {site.lineno}.", level="error")
+                log(f"  ✗ Failed for call site at line {site.lineno}: {error}", level="error")
 
         if not golden_responses:
-            log("Failed to capture any golden responses. Check your OPENAI_API_KEY.", level="error")
+            log(f"Failed to capture any golden responses. Check your SOURCE_API_KEY and SOURCE_BASE_URL in .env.", level="error")
             job_store.set_error(job_id, "Golden capture failed for all call sites.")
             return
 
@@ -80,7 +81,7 @@ def run_pipeline(job_id: str, script_content: str, filename: str):
 
         # ========== PHASE 3: OPTIMIZATION LOOP ==========
         job_store.set_phase(job_id, JobPhase.OPTIMIZING)
-        log("🔄 Phase 3: Running agentic optimization loop (Groq → NVIDIA → Gemini)...")
+        log(f"🔄 Phase 3: Running agentic optimization loop...")
 
         optimization_results = []
         for i, (site, golden) in enumerate(zip(call_sites, golden_responses)):
@@ -108,7 +109,7 @@ def run_pipeline(job_id: str, script_content: str, filename: str):
         ]
 
         refactored = refactor_code(script_content, optimized_prompts)
-        log("✅ Source code successfully refactored to use NVIDIA Llama!", level="success")
+        log(f"✅ Source code successfully refactored to use {config.TARGET_PROVIDER}!", level="success")
 
         # ========== PHASE 5: REPORT ==========
         log("📊 Phase 5: Generating migration report...")

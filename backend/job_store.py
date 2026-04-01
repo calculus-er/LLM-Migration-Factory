@@ -5,12 +5,18 @@ from models import JobStatus, JobPhase, LogEntry
 
 
 class JobStore:
-    """Thread-safe in-memory store for migration jobs."""
+    """Thread-safe in-memory store for migration jobs.
+    
+    Uses threading.Event and a simple list-based pub/sub
+    that is safe to call from both sync threads and the async event loop.
+    """
 
     def __init__(self):
         self._jobs: Dict[str, JobStatus] = {}
         self._lock = threading.Lock()
-        self._subscribers: Dict[str, List[asyncio.Queue]] = {}
+        # Use a list of (loop, queue) tuples so we can safely
+        # push events from any thread into the correct event loop.
+        self._subscribers: Dict[str, List[tuple]] = {}
 
     def create_job(self, job_id: str, filename: str) -> JobStatus:
         job = JobStatus(job_id=job_id, filename=filename)
@@ -53,25 +59,27 @@ class JobStore:
                 job.error = error
         self._notify(job_id, {"type": "error", "message": error})
 
-    def subscribe(self, job_id: str, queue: asyncio.Queue):
+    def subscribe(self, job_id: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+        """Subscribe with both the queue and its owning event loop."""
         with self._lock:
             if job_id in self._subscribers:
-                self._subscribers[job_id].append(queue)
+                self._subscribers[job_id].append((loop, queue))
 
     def unsubscribe(self, job_id: str, queue: asyncio.Queue):
         with self._lock:
             if job_id in self._subscribers:
-                try:
-                    self._subscribers[job_id].remove(queue)
-                except ValueError:
-                    pass
+                self._subscribers[job_id] = [
+                    (l, q) for l, q in self._subscribers[job_id] if q is not queue
+                ]
 
     def _notify(self, job_id: str, event: dict):
+        """Thread-safe notification: uses call_soon_threadsafe to push
+        events into asyncio queues from any thread."""
         with self._lock:
-            queues = list(self._subscribers.get(job_id, []))
-        for q in queues:
+            subs = list(self._subscribers.get(job_id, []))
+        for loop, q in subs:
             try:
-                q.put_nowait(event)
+                loop.call_soon_threadsafe(q.put_nowait, event)
             except Exception:
                 pass
 

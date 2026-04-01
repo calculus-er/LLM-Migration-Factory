@@ -1,9 +1,9 @@
 """
 Optimization Loop — Orchestrates the full iterative cycle:
-  1. Groq Llama translates the prompt
-  2. NVIDIA Llama executes the translated prompt
-  3. Gemini judges the result against the golden truth
-  4. If score < threshold, feed feedback back to Groq and retry
+  1. Optimizer model translates the prompt
+  2. Target model executes the translated prompt
+  3. Judge model evaluates the result against the golden truth
+  4. If score < threshold, feed feedback back to the Optimizer and retry
 """
 import os
 from typing import Callable, Optional
@@ -12,6 +12,7 @@ from models import CallSite, GoldenResponse, OptimizationIteration, Optimization
 from optimizer.prompt_translator import translate_prompt
 from optimizer.target_runner import run_on_target
 from optimizer.evaluator import evaluate_response
+from config import config
 
 
 def run_optimization_loop(
@@ -24,14 +25,14 @@ def run_optimization_loop(
 
     Args:
         call_site: The parsed OpenAI call site
-        golden: The golden ground truth response from OpenAI
+        golden: The golden ground truth response from the Source model
         log_fn: Optional callback for streaming log messages (e.g., to WebSocket)
 
     Returns:
         OptimizationResult with all iteration details and the final best prompt
     """
-    max_iterations = int(os.environ.get("OPTIMIZATION_MAX_ITERATIONS", "5"))
-    threshold = int(os.environ.get("OPTIMIZATION_THRESHOLD", "90"))
+    max_iterations = config.OPTIMIZATION_MAX_ITERATIONS
+    threshold = config.OPTIMIZATION_THRESHOLD
 
     system_prompt = call_site.system_prompt or ""
     user_prompt = call_site.user_prompt or ""
@@ -50,7 +51,7 @@ def run_optimization_loop(
             log_fn(msg, level)
 
     for i in range(1, max_iterations + 1):
-        log(f"Iteration {i}/{max_iterations}: Translating prompt via Groq Llama...")
+        log(f"Iteration {i}/{max_iterations}: Translating prompt via {config.OPTIMIZER_MODEL}...")
 
         # Step 1: Translate (or refine) the prompt
         translated = translate_prompt(
@@ -65,15 +66,15 @@ def run_optimization_loop(
         t_system = translated["system_prompt"]
         t_user = translated["user_prompt"]
 
-        log(f"Iteration {i}: Running translated prompt on NVIDIA Llama target...")
+        log(f"Iteration {i}: Running translated prompt on {config.TARGET_MODEL} target...")
 
-        # Step 2: Execute on NVIDIA Llama
+        # Step 2: Execute on Target model
         target_result = run_on_target(t_system, t_user)
         target_response = target_result["response_text"]
 
-        log(f"Iteration {i}: Target responded ({target_result['latency_ms']:.0f}ms). Sending to Gemini Judge...")
+        log(f"Iteration {i}: Target responded ({target_result['latency_ms']:.0f}ms). Sending to {config.JUDGE_MODEL} Judge...")
 
-        # Step 3: Evaluate with Gemini
+        # Step 3: Evaluate with Judge
         eval_result = evaluate_response(
             golden_response=golden.response_text,
             target_response=target_response,

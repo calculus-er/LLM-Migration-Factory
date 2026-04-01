@@ -300,9 +300,13 @@ function PipelineView({ jobId, onFinish }: { jobId: string; onFinish: () => void
   }, [logs]);
 
   useEffect(() => {
+    let isMounted = true;
+    let finished = false;
     const ws = new WebSocket(`${WS_BASE}/ws/${jobId}`);
 
     ws.onmessage = (event) => {
+      if (!isMounted) return;
+      
       const data = JSON.parse(event.data);
 
       if (data.type === 'log') {
@@ -311,24 +315,35 @@ function PipelineView({ jobId, onFinish }: { jobId: string; onFinish: () => void
         const step = PHASE_TO_STEP[data.phase] ?? 0;
         setActiveStep(step);
         if (data.phase === 'complete') {
-          setTimeout(onFinish, 1500);
+          finished = true;
+          setActiveStep(4);
+          setTimeout(() => { if (isMounted) onFinish(); }, 1500);
         } else if (data.phase === 'failed') {
           setPipelineError('Pipeline failed. Check logs for details.');
         }
+      } else if (data.type === 'report_ready') {
+        finished = true;
+        setActiveStep(4);
+        setTimeout(() => { if (isMounted) onFinish(); }, 1000);
       } else if (data.type === 'error') {
         setPipelineError(data.message || 'Unknown error');
       }
     };
 
     ws.onerror = () => {
-      setPipelineError('WebSocket connection lost. Is the backend running?');
+      // Only show error if the component is fully mounted and no standard completion occurred
+      if (isMounted && !finished) {
+        setPipelineError('WebSocket connection lost. Is the backend running?');
+      }
     };
 
     ws.onclose = () => {
-      // Connection closed
+      // Expected close
     };
 
     return () => {
+      isMounted = false;
+      // Closing naturally from cleanup shouldn't trigger an error state.
       ws.close();
     };
   }, [jobId, onFinish]);
