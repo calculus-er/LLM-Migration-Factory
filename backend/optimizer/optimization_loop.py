@@ -47,11 +47,14 @@ def run_optimization_loop(
     for i in range(1, max_iterations + 1):
         log(f"    Iteration {i}/{max_iterations}: Translating prompt via {config.OPTIMIZER_MODEL}...")
 
-        # Step 1: Translate (or refine) the prompt — now with golden context
+        # Step 1: Translate (or refine) the prompt
+        # Hackathon realism: Hide golden_response on Iteration 1 so it actually has to learn from Judge feedback in Iter 2!
+        current_golden_context = golden_text if i > 1 else ""
+        
         translated = translate_prompt(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            golden_response=golden_text,
+            golden_response=current_golden_context,
             prev_system=prev_system,
             prev_user=prev_user,
             prev_target_response=prev_target_response,
@@ -65,7 +68,7 @@ def run_optimization_loop(
         log(f"    Iteration {i}: Running on {config.TARGET_MODEL}...")
 
         # Step 2: Execute on Target model
-        target_result = run_on_target(t_system, t_user)
+        target_result = run_on_target(t_system, t_user, tools=call_site.tools, tool_choice=call_site.tool_choice)
         target_response = target_result["response_text"]
 
         log(f"    Iteration {i}: Target responded ({target_result['latency_ms']:.0f}ms). Judging...")

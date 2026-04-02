@@ -36,11 +36,11 @@ class Config:
     OPTIMIZATION_THRESHOLD: int = int(os.environ.get("OPTIMIZATION_THRESHOLD", "90"))
     OPTIMIZATION_MAX_ITERATIONS: int = int(os.environ.get("OPTIMIZATION_MAX_ITERATIONS", "5"))
 
-    # Rough USD per 1k tokens for target-side cost estimate in reports (honesty: tune to your provider)
+    # Rough USD per 1k tokens for target-side cost estimate in reports
     TARGET_COST_INPUT_PER_1K: float = float(os.environ.get("TARGET_COST_INPUT_PER_1K", "0.0003"))
     TARGET_COST_OUTPUT_PER_1K: float = float(os.environ.get("TARGET_COST_OUTPUT_PER_1K", "0.0006"))
 
-    # UI labels (optional; default to model ids for honesty)
+    # UI labels (optional; default to model ids)
     SOURCE_LABEL: str = os.environ.get("SOURCE_LABEL", "").strip() or os.environ.get("SOURCE_MODEL", "source")
     TARGET_LABEL: str = os.environ.get("TARGET_LABEL", "").strip() or os.environ.get("TARGET_MODEL", "target")
     JUDGE_LABEL: str = os.environ.get("JUDGE_LABEL", "").strip() or os.environ.get("JUDGE_MODEL", "judge")

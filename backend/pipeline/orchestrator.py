@@ -49,6 +49,8 @@ def run_pipeline(job_id: str, script_content: str, filename: str):
                 temperature=c.args.get("temperature"),
                 max_tokens=c.args.get("max_tokens"),
                 messages=c.args.get("messages", []),
+                tools=c.args.get("tools"),
+                tool_choice=c.args.get("tool_choice"),
                 raw_snippet=c.raw_snippet,
             )
             call_sites.append(site)

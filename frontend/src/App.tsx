@@ -782,16 +782,58 @@ function ReportView({
                 </div>
               </div>
             )}
+            
+            <div className="mt-8 border-t border-white/10 pt-6">
+              <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-400" /> Response Comparison (Final Iteration)
+              </h4>
+              <div className="grid grid-cols-2 gap-6 font-mono text-xs">
+                <div>
+                  <div className="text-muted-foreground uppercase tracking-wider mb-2 font-semibold flex justify-between">
+                    <span>Source Golden Response</span>
+                    <span className="text-neutral-500">{golden?.latency_ms ? `${Math.round(golden.latency_ms)}ms` : ''}</span>
+                  </div>
+                  <div className="p-5 bg-white/5 rounded-xl border border-white/10 text-neutral-300 min-h-[120px] max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words format-output shadow-inner">
+                    {golden?.response_text || '(no golden response)'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-primary uppercase tracking-wider mb-2 font-semibold">Target Model Output</div>
+                  <div className="p-5 bg-primary/10 rounded-xl border border-primary/30 text-primary min-h-[120px] max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words format-output shadow-[0_0_20px_rgba(16,185,129,0.05)_inset]">
+                    {opt.target_response || '(no target response)'}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
           </motion.div>
         );
       })}
 
-      <div className="flex justify-center pt-4">
+      {report.refactored_code && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="p-8 rounded-2xl border border-primary/30 bg-black/60 backdrop-blur-xl shadow-[0_0_40px_rgba(16,185,129,0.1)]">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-bold text-white flex items-center gap-3">
+              <Cpu className="w-6 h-6 text-primary" /> Target Refactored Code
+            </h3>
+            <span className="text-sm text-primary/80 font-mono px-3 py-1 bg-primary/10 rounded-full border border-primary/20">
+              Ready for production
+            </span>
+          </div>
+          <div className="p-6 bg-black/80 rounded-xl border border-white/10 overflow-x-auto shadow-inner">
+            <pre className="font-mono text-sm text-neutral-300 leading-relaxed">
+              {report.refactored_code}
+            </pre>
+          </div>
+        </motion.div>
+      )}
+
+      <div className="flex justify-center pt-8 pb-12">
         <button
           onClick={onReset}
-          className="px-6 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 font-medium transition-colors text-muted-foreground hover:text-white flex items-center gap-2"
+          className="px-8 py-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 font-bold transition-colors text-muted-foreground hover:text-white flex items-center gap-3"
         >
-          <RefreshCw className="w-4 h-4" /> Start New Migration
+          <RefreshCw className="w-5 h-5" /> Start New Migration
         </button>
       </div>
     </div>

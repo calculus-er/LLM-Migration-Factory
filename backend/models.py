@@ -25,6 +25,8 @@ class CallSite(BaseModel):
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     messages: List[Dict[str, Any]] = Field(default_factory=list)
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[str] = None
     raw_snippet: str
 
     @property

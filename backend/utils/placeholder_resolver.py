@@ -16,6 +16,7 @@ SAMPLE_DATA = {
         "remain significant challenges that society must address."
     ),
     "review": "This product exceeded my expectations! The quality is outstanding and delivery was super fast. Highly recommend to everyone.",
+    "user_request": "What is the price of AAPL right now?",
     "input": "The weather today is sunny with a high of 75 degrees Fahrenheit.",
     "content": "Machine learning models require large datasets for training. Transfer learning can reduce data needs significantly.",
     "query": "What are the main benefits of renewable energy sources?",
@@ -36,10 +37,11 @@ DEFAULT_SAMPLE = "This is a sample input text for testing and evaluation purpose
 
 
 def detect_placeholders(text: str) -> List[str]:
-    """Find all {variable_name} placeholders in a string."""
+    """Find all {variable_name} or {variable name} placeholders in a string."""
     if not text:
         return []
-    return re.findall(r'\{(\w+)\}', text)
+    # Match letters, numbers, underscores, AND spaces inside braces
+    return re.findall(r'\{([A-Za-z0-9_\s]+)\}', text)
 
 
 def substitute_placeholders(text: str) -> str:
@@ -53,7 +55,9 @@ def substitute_placeholders(text: str) -> str:
 
     result = text
     for var_name in placeholders:
-        sample = SAMPLE_DATA.get(var_name.lower(), DEFAULT_SAMPLE)
+        # Normalize: 'user request' -> 'user_request'
+        normalized_key = var_name.lower().strip().replace(" ", "_")
+        sample = SAMPLE_DATA.get(normalized_key, DEFAULT_SAMPLE)
         result = result.replace(f'{{{var_name}}}', sample)
 
     return result

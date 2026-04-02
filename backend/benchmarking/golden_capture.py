@@ -56,6 +56,10 @@ def capture_golden_response(call_site: CallSite) -> tuple:
         kwargs["temperature"] = call_site.temperature
     if call_site.max_tokens is not None:
         kwargs["max_tokens"] = call_site.max_tokens
+    if call_site.tools:
+        kwargs["tools"] = call_site.tools
+    if call_site.tool_choice:
+        kwargs["tool_choice"] = call_site.tool_choice
 
     start_time = time.time()
     try:
@@ -66,7 +70,19 @@ def capture_golden_response(call_site: CallSite) -> tuple:
     end_time = time.time()
 
     latency_ms = (end_time - start_time) * 1000.0
-    text_content = response.choices[0].message.content or ""
+    message = response.choices[0].message
+    text_content = message.content or ""
+    
+    # Handle tool call responses — serialize so the judge can compare
+    if hasattr(message, 'tool_calls') and message.tool_calls:
+        import json as _json
+        tool_calls_data = []
+        for tc in message.tool_calls:
+            tool_calls_data.append({
+                "name": tc.function.name,
+                "arguments": tc.function.arguments,
+            })
+        text_content = text_content or _json.dumps({"tool_calls": tool_calls_data})
     
     print(f"[GOLDEN] Response: {repr(text_content)}", file=sys.stderr)
     
