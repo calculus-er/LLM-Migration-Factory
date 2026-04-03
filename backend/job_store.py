@@ -106,7 +106,6 @@ class DynamoDBJobStore(JobStore):
         super().__init__()
         import boto3
 
-        self._table_name = table_name
         self._ddb = boto3.resource("dynamodb", region_name=region or os.environ.get("AWS_REGION", "us-east-1"))
         self._table = self._ddb.Table(table_name)
 

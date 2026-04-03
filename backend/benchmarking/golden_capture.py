@@ -1,9 +1,8 @@
 import time
-from typing import Optional
 from openai import OpenAI
 from models import CallSite, GoldenResponse
 from config import config
-from utils.placeholder_resolver import substitute_messages, has_placeholders
+from utils.placeholder_resolver import substitute_messages
 
 COST_PER_1K_TOKENS = {
     "gpt-4o": {"input": 0.005, "output": 0.015},
@@ -23,10 +22,6 @@ def capture_golden_response(call_site: CallSite) -> tuple:
     source_model = config.SOURCE_MODEL
 
     api_messages = substitute_messages(call_site.messages)
-
-    import sys
-    print(f"[GOLDEN] Original msg: {call_site.messages}", file=sys.stderr)
-    print(f"[GOLDEN] Substituted msg: {api_messages}", file=sys.stderr)
 
     if config.USE_MOCK_APIS:
         time.sleep(1.2)
@@ -65,7 +60,6 @@ def capture_golden_response(call_site: CallSite) -> tuple:
     try:
         response = client.chat.completions.create(**kwargs)
     except Exception as e:
-        print(f"[GOLDEN] Error: {e}", file=sys.stderr)
         return None, f"API error: {str(e)}"
     end_time = time.time()
 
@@ -83,8 +77,6 @@ def capture_golden_response(call_site: CallSite) -> tuple:
                 "arguments": tc.function.arguments,
             })
         text_content = text_content or _json.dumps({"tool_calls": tool_calls_data})
-    
-    print(f"[GOLDEN] Response: {repr(text_content)}", file=sys.stderr)
     
     prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
     completion_tokens = getattr(response.usage, "completion_tokens", 0)

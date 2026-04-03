@@ -5,6 +5,7 @@ aggregated metrics (estimated costs; tune TARGET_COST_* in config / .env).
 from typing import List
 from models import MigrationReport, GoldenResponse, OptimizationResult
 from config import config
+from utils.placeholder_resolver import substitute_messages, substitute_placeholders
 
 
 def generate_report(
@@ -50,12 +51,30 @@ def generate_report(
     if original_cost > 0:
         cost_savings_pct = ((original_cost - target_cost) / original_cost) * 100.0
 
+    # Ensure all report output substitutes variables so the UI prints actual contents 
+    # instead of "{variables}". Code surgeon has ALREADY run, so this only affects the UI.
+    ui_golden = []
+    for g in golden_responses:
+        d = g.dict()
+        d['original_messages'] = substitute_messages(g.original_messages)
+        ui_golden.append(GoldenResponse(**d))
+        
+    ui_opt = []
+    for r in optimization_results:
+        d = r.dict()
+        d['final_system_prompt'] = substitute_placeholders(r.final_system_prompt)
+        d['final_user_prompt'] = substitute_placeholders(r.final_user_prompt)
+        for it in d['iterations']:
+            it['translated_system_prompt'] = substitute_placeholders(it['translated_system_prompt'])
+            it['translated_user_prompt'] = substitute_placeholders(it['translated_user_prompt'])
+        ui_opt.append(OptimizationResult(**d))
+
     return MigrationReport(
         job_id=job_id,
         filename=filename,
         total_call_sites=total_call_sites,
-        golden_responses=golden_responses,
-        optimization_results=optimization_results,
+        golden_responses=ui_golden,
+        optimization_results=ui_opt,
         avg_semantic_score=round(avg_score, 2),
         original_cost_usd=round(original_cost, 6),
         target_cost_usd=round(target_cost, 6),

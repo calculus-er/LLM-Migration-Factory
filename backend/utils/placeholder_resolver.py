@@ -63,13 +63,6 @@ def substitute_placeholders(text: str) -> str:
     return result
 
 
-def has_placeholders(text: str) -> bool:
-    """Check if text contains any {variable} placeholders."""
-    if not text:
-        return False
-    return bool(re.search(r'\{(\w+)\}', text))
-
-
 def substitute_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Create a copy of messages with all placeholders substituted.
