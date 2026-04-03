@@ -44,6 +44,9 @@ to "target model" for hackathon demos and beyond.
    A report is generated with semantic fidelity, latency, and estimated cost metrics,
    and the refactored Python file is available for download.
 
+<img width="2459" height="4055" alt="LLM Migration Factory README flow" src="https://github.com/user-attachments/assets/debc4c49-243e-48e2-aa5c-9b7ba076dbe9" />
+
+
 ## What you get from the tool
 
 - A **working migration pipeline** from source to target model stack
